@@ -1,0 +1,77 @@
+# -*- coding: utf-8 -*-
+import sys
+import subprocess
+import threading
+from datetime import datetime
+
+# Variables globales para contar comandos exitosos y fallidos
+comandos_exitosos = 0
+comandos_fallidos = 0
+
+# Bloqueo para manejar el acceso concurrente a las variables globales
+bloqueo = threading.Lock()
+
+def ejecutar_comando(comando, formato_fecha):
+    
+    global comandos_exitosos, comandos_fallidos
+    try:
+        # Ejecuta el comando y obtener el valor de retorno
+        resultado = subprocess.call(comando, shell=True)
+        codigo_retorno = resultado
+
+        # Obtiene timestamp en el formato indicado
+        marca_tiempo = datetime.now().strftime(formato_fecha)
+
+        # Imprime el resultado en formato requerido
+        print("%s %s -> %d" % (marca_tiempo, comando, codigo_retorno))
+
+        # Maneja el éxito y fallo de comandos
+        with bloqueo:
+            if codigo_retorno == 0:
+                comandos_exitosos += 1
+            else:
+                comandos_fallidos += 1
+                print >> sys.stderr, "El comando %s, falló con valor de retorno %d" % (comando, codigo_retorno)
+
+    except Exception as e:
+        print >> sys.stderr, "Error ejecutando el comando %s: %s" % (comando, str(e))
+
+def main():
+    """
+    Función principal que gestiona la lectura de comandos, la creación de hilos y la finalización del programa.
+    """
+    global comandos_exitosos, comandos_fallidos
+
+    # Formato de fecha por defecto ISO 8601
+    formato_fecha = "%Y-%m-%dT%H:%M:%S"
+
+    # Comprobar si se ha especificado un formato de fecha mediante el argumento -f
+    if len(sys.argv) > 1 and sys.argv[1] == '-f' and len(sys.argv) > 2:
+        formato_fecha = sys.argv[2]
+
+    hilos = []
+
+    try:
+        # Lee comandos de la entrada estándar y crear un hilo por cada comando
+        for linea in sys.stdin:
+            comando = linea.strip()
+            if comando:  # Ignorar líneas vacías
+                hilo = threading.Thread(target=ejecutar_comando, args=(comando, formato_fecha))
+                hilos.append(hilo)
+                hilo.start()
+
+        # Espera a que todos los hilos terminen
+        for hilo in hilos:
+            hilo.join()
+
+    except KeyboardInterrupt:
+        print("Programa interrumpido por el usuario.")
+    finally:
+        # Imprime el resumen de los comandos ejecutados
+        print("Comandos ejecutados correctamente: %d" % comandos_exitosos)
+        print("Comandos con error: %d" % comandos_fallidos)
+        # Retorna la cantidad de comandos fallidos como código de salida
+        sys.exit(comandos_fallidos)
+
+if __name__ == "__main__":
+    main()
