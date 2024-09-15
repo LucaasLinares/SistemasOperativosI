@@ -1,0 +1,127 @@
+#!/bin/bash
+# Salir inmediatamente si hay un error
+set -e
+
+# Verificamos si se proporcionó un argumento
+if [ -z "$1" ]; then
+    printf "\033[0;31mError: No se proporcionó un directorio.\033[0m\n"
+    exit 2
+fi
+
+# Verificamos si el directorio pasado por argumento existe y es un directorio
+if [ ! -d "$1" ]; then
+    printf "\033[0;31mError: El directorio no existe o no es un directorio.\033[0m\n"
+    exit 2
+fi
+
+# Guardamos el directorio base (el que se pasa por argumento)
+base_dir="$1"
+
+# Cambiamos al directorio proporcionado
+cd "$base_dir"
+
+# Obtenenemos la ruta absoluta usando pwd
+base_dir=$(pwd)
+
+# Verificamos si el directorio está vacío
+if [ -z "$(ls -A)" ]; then
+    printf "\033[0;33mEl directorio está vacío.\033[0m\n"
+    exit 1
+fi
+
+# Inicialización de contadores
+count_processed=0
+count_pdf=0
+count_png=0
+count_webm=0
+count_txt=0
+count_other=0
+
+# Colores para los mensajes
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+NC='\033[0m' # Sin color
+
+# Recorremos los archivos en el directorio
+for file in *; do
+    if [ -f "$file" ]; then
+        count_processed=$((count_processed + 1))
+
+        # Obtenemos el año de creación del archivo usando `stat` y `cut`
+        creation_year=$(stat -f "%SB" -t "%Y" "$file" | cut -d' ' -f1)
+
+        # Obtenemos el tipo de archivo usando `file` y `cut`
+        file_type=$(file --mime-type -b "$file" | cut -d'/' -f2)
+
+        # Si el tipo de archivo es `x-empty`, usar la extensión del archivo
+        if [ "$file_type" == "x-empty" ]; then
+            ext="${file##*.}"
+            case "$ext" in
+                pdf)
+                    file_type="pdf"
+                    ;;
+                png)
+                    file_type="png"
+                    ;;
+                webm)
+                    file_type="webm"
+                    ;;
+                txt)
+                    file_type="plain"
+                    ;;
+                *)
+                    file_type="other"
+                    ;;
+            esac
+        fi
+
+        # Determinamos el tipo de archivo y moverlo a la ubicación correspondiente dentro del directorio base
+        case $file_type in
+            pdf)
+                dest_dir="$base_dir/Documents/$creation_year"
+                count_pdf=$((count_pdf + 1))
+                ;;
+            png)
+                dest_dir="$base_dir/Images/$creation_year"
+                count_png=$((count_png + 1))
+                ;;
+            webm)
+                dest_dir="$base_dir/Movies/$creation_year"
+                count_webm=$((count_webm + 1))
+                ;;
+            plain)
+                dest_dir="$base_dir/Sources/$creation_year"
+                count_txt=$((count_txt + 1))
+                ;;
+            *)
+                dest_dir="$base_dir/tmp/$creation_year"
+                count_other=$((count_other + 1))
+                ;;
+        esac
+
+        # Creamos el directorio de destino si no existe
+        if [ ! -d "$dest_dir" ]; then
+            mkdir -p "$dest_dir"
+        fi
+
+        # Movemos el archivo al directorio de destino
+        mv "$file" "$dest_dir/"
+        # Actualizamos la fecha de acceso y modificación al momento actual
+        touch "$dest_dir/$file"
+    fi
+done
+
+# Imprimimos los resultados
+printf "${GREEN}Archivos procesados: $count_processed${NC}\n"
+printf "${CYAN}PDFs movidos: $count_pdf${NC}\n"
+printf "${CYAN}PNGs movidos: $count_png${NC}\n"
+printf "${CYAN}WEBMs movidos: $count_webm${NC}\n"
+printf "${CYAN}TXTs movidos: $count_txt${NC}\n"
+printf "${CYAN}Otros archivos movidos: $count_other${NC}\n"
+
+# Determinamos el código de retorno
+if [ $count_processed -eq 0 ]; then
+    exit 1  # Ningún archivo procesado
+else
+    exit 0  # Archivos procesados correctamente
+fi
