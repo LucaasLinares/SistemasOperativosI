@@ -1,0 +1,168 @@
+import threading
+import random
+import time
+import signal
+import sys
+
+# Parámetros del parque y atracciones
+CAPACIDAD_PARQUE = 100
+CAPACIDAD_MUSEO = 20
+CAPACIDAD_SHOW = 28
+CAPACIDAD_SAFARI = 52
+CAPACIDAD_VEHICULO = 4
+NUM_VEHICULOS = 13
+MAX_PERSONAS = 50  # Puedes ajustar el número de personas para pruebas
+
+# Semáforos para gestionar capacidad
+parque_semaforo = threading.Semaphore(CAPACIDAD_PARQUE)
+museo_semaforo = threading.Semaphore(CAPACIDAD_MUSEO)
+show_semaforo = threading.Semaphore(CAPACIDAD_SHOW)
+safari_semaforo = threading.Semaphore(CAPACIDAD_SAFARI)
+vehiculo_semaforo = threading.Semaphore(CAPACIDAD_VEHICULO)
+vehiculo_lock = threading.Lock()
+stats_lock = threading.Lock()
+
+# Variables para estadísticas
+personas_museo = 0
+personas_show = 0
+personas_safari = 0
+personas_transportadas = [0] * NUM_VEHICULOS
+
+# Acomodador del show (espera a llenar el show para iniciarlo)
+class Acomodador(threading.Thread):
+    def __init__(self):
+        super().__init__()
+        self.participantes = 0
+        self.lock = threading.Lock()
+        self.condicion_lleno = threading.Condition(self.lock)
+
+    def agregar_persona(self):
+        with self.lock:
+            self.participantes += 1
+            if self.participantes == CAPACIDAD_SHOW:
+                self.condicion_lleno.notify_all()
+
+    def iniciar_show(self):
+        with self.lock:
+            while self.participantes < CAPACIDAD_SHOW:
+                self.condicion_lleno.wait()  # Espera a que la sala se llene
+            time.sleep(5)  # Duración del show
+            self.participantes = 0
+            print(f"El show terminó con {CAPACIDAD_SHOW} participantes.")
+
+# Inicializar el acomodador
+acomodador = Acomodador()
+
+# Clase Persona
+class Persona(threading.Thread):
+    def __init__(self, id_persona):
+        super().__init__()
+        self.id_persona = id_persona
+        self.atracciones_visitadas = []
+
+    def run(self):
+        try:
+            parque_semaforo.acquire()
+            print(f"Persona {self.id_persona} ha entrado al parque.")
+            self.visitar_atraccion()
+        finally:
+            parque_semaforo.release()
+            print(f"Persona {self.id_persona} ha salido del parque.")
+
+    def visitar_atraccion(self):
+        atracciones = ["museo", "show", "safari"]
+        while atracciones:
+            atraccion = random.choice(atracciones)
+            if atraccion == "museo":
+                self.visitar_museo()
+            elif atraccion == "show":
+                self.visitar_show()
+            elif atraccion == "safari":
+                self.visitar_safari()
+            atracciones.remove(atraccion)
+            if random.random() > 0.5:  # Decide si se retira del parque
+                break
+
+    def visitar_museo(self):
+        museo_semaforo.acquire()
+        global personas_museo
+        print(f"Persona {self.id_persona} está visitando el museo.")
+        time.sleep(random.uniform(1, 3))  # Simulación del tiempo en el museo
+        with stats_lock:
+            personas_museo += 1
+        museo_semaforo.release()
+        print(f"Persona {self.id_persona} ha salido del museo.")
+
+    def visitar_show(self):
+        show_semaforo.acquire()
+        global personas_show
+        print(f"Persona {self.id_persona} está esperando para ver el show de realidad virtual.")
+        acomodador.agregar_persona()
+        acomodador.iniciar_show()
+        with stats_lock:
+            personas_show += 1
+        show_semaforo.release()
+        print(f"Persona {self.id_persona} ha salido del show.")
+
+    def visitar_safari(self):
+        vehiculo_semaforo.acquire()  # Espera a que haya un vehículo disponible
+        print(f"Persona {self.id_persona} está esperando un vehículo para ir al safari.")
+        time.sleep(random.uniform(1, 2))  # Tiempo para llegar al safari
+        global personas_safari
+        with stats_lock:
+            personas_safari += 1
+        vehiculo_semaforo.release()
+        print(f"Persona {self.id_persona} ha salido del safari.")
+
+# Clase Vehiculo
+class Vehiculo(threading.Thread):
+    def __init__(self, id_vehiculo):
+        super().__init__()
+        self.id_vehiculo = id_vehiculo
+
+    def run(self):
+        while True:
+            print(f"Vehículo {self.id_vehiculo} está esperando pasajeros.")
+            vehiculo_semaforo.acquire()
+            print(f"Vehículo {self.id_vehiculo} está transportando personas al safari.")
+            time.sleep(2)  # Simulación del tiempo de viaje
+            with stats_lock:
+                personas_transportadas[self.id_vehiculo] += CAPACIDAD_VEHICULO
+            print(f"Vehículo {self.id_vehiculo} ha transportado personas.")
+
+# Función para manejar la señal de terminación
+def signal_handler(sig, frame):
+    print("\nSeñal de terminación recibida. Cerrando el parque...")
+    # Imprimir estadísticas finales
+    print(f"Personas que visitaron el museo: {personas_museo}")
+    print(f"Personas que vieron el show de realidad virtual: {personas_show}")
+    print(f"Personas que visitaron el safari: {personas_safari}")
+    print(f"Personas transportadas por cada vehículo: {personas_transportadas}")
+    sys.exit(0)
+
+# Asignar el manejador de señales para SIGTERM y SIGINT (Ctrl+C)
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
+
+# Inicialización de los hilos de vehículos y acomodador
+vehiculos = [Vehiculo(i) for i in range(NUM_VEHICULOS)]
+acomodador.start()
+
+# Ejecutar los vehículos
+for v in vehiculos:
+    v.start()
+
+# Crear y ejecutar las personas
+personas = [Persona(i) for i in range(MAX_PERSONAS)]  # Usamos MAX_PERSONAS para la simulación
+for p in personas:
+    p.start()
+
+# Esperar a que todas las personas terminen
+for p in personas:
+    p.join()
+
+# Imprimir estadísticas finales si todas las personas terminan
+print(f"Personas que visitaron el museo: {personas_museo}")
+print(f"Personas que vieron el show de realidad virtual: {personas_show}")
+print(f"Personas que visitaron el safari: {personas_safari}")
+print(f"Personas transportadas por cada vehículo: {personas_transportadas}")
