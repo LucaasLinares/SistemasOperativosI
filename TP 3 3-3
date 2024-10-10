@@ -1,3 +1,4 @@
+# VERSION FINAL 
 import threading
 import random
 import time
@@ -5,21 +6,21 @@ import signal
 import sys
 
 # Parámetros del parque y atracciones
+
 CAPACIDAD_PARQUE = 100
 CAPACIDAD_MUSEO = 20
 CAPACIDAD_SHOW = 28
 CAPACIDAD_SAFARI = 52
 CAPACIDAD_VEHICULO = 4
-NUM_VEHICULOS = 13
-MAX_PERSONAS = 50  # Puedes ajustar el número de personas para pruebas
+NUM_VEHICULOS = 12
+MAX_PERSONAS = 100
 
 # Semáforos para gestionar capacidad
 parque_semaforo = threading.Semaphore(CAPACIDAD_PARQUE)
 museo_semaforo = threading.Semaphore(CAPACIDAD_MUSEO)
 show_semaforo = threading.Semaphore(CAPACIDAD_SHOW)
 safari_semaforo = threading.Semaphore(CAPACIDAD_SAFARI)
-vehiculo_semaforo = threading.Semaphore(CAPACIDAD_VEHICULO)
-vehiculo_lock = threading.Lock()
+vehiculo_semaforo = threading.Semaphore(0)  # Inicialmente en 0, los vehículos esperan por personas
 stats_lock = threading.Lock()
 
 # Variables para estadísticas
@@ -27,8 +28,9 @@ personas_museo = 0
 personas_show = 0
 personas_safari = 0
 personas_transportadas = [0] * NUM_VEHICULOS
+terminar = False
 
-# Acomodador del show (espera a llenar el show para iniciarlo)
+# Acomodador del show
 class Acomodador(threading.Thread):
     def __init__(self):
         super().__init__()
@@ -44,11 +46,12 @@ class Acomodador(threading.Thread):
 
     def iniciar_show(self):
         with self.lock:
-            while self.participantes < CAPACIDAD_SHOW:
-                self.condicion_lleno.wait()  # Espera a que la sala se llene
-            time.sleep(5)  # Duración del show
-            self.participantes = 0
-            print(f"El show terminó con {CAPACIDAD_SHOW} participantes.")
+            while self.participantes < CAPACIDAD_SHOW and not terminar:
+                self.condicion_lleno.wait(timeout=1)  # Espera con timeout
+            if not terminar and self.participantes >= CAPACIDAD_SHOW:
+                time.sleep(5)  # Duración del show
+                self.participantes = 0
+                print(f"El show terminó con {CAPACIDAD_SHOW} participantes.")
 
 # Inicializar el acomodador
 acomodador = Acomodador()
@@ -58,20 +61,24 @@ class Persona(threading.Thread):
     def __init__(self, id_persona):
         super().__init__()
         self.id_persona = id_persona
-        self.atracciones_visitadas = []
 
     def run(self):
+        global terminar
         try:
-            parque_semaforo.acquire()
-            print(f"Persona {self.id_persona} ha entrado al parque.")
-            self.visitar_atraccion()
+            if not parque_semaforo.acquire(timeout=1):  # Timeout para revisar si debe terminar
+                return
+            if not terminar:
+                print(f"Persona {self.id_persona} ha entrado al parque.")
+                time.sleep(1)  # Pausa de 1 segundo
+                self.visitar_atraccion()
         finally:
-            parque_semaforo.release()
-            print(f"Persona {self.id_persona} ha salido del parque.")
+            if not terminar:  # Solo imprimir si no se ha recibido la señal de terminación
+                parque_semaforo.release()
 
     def visitar_atraccion(self):
+        global terminar
         atracciones = ["museo", "show", "safari"]
-        while atracciones:
+        while atracciones and not terminar:
             atraccion = random.choice(atracciones)
             if atraccion == "museo":
                 self.visitar_museo()
@@ -80,39 +87,46 @@ class Persona(threading.Thread):
             elif atraccion == "safari":
                 self.visitar_safari()
             atracciones.remove(atraccion)
-            if random.random() > 0.5:  # Decide si se retira del parque
+            time.sleep(1)  # Pausa de 1 segundo entre atracciones
+            if random.random() > 0.5 or terminar:  # Decide si se retira del parque
                 break
 
     def visitar_museo(self):
-        museo_semaforo.acquire()
         global personas_museo
-        print(f"Persona {self.id_persona} está visitando el museo.")
-        time.sleep(random.uniform(1, 3))  # Simulación del tiempo en el museo
-        with stats_lock:
-            personas_museo += 1
-        museo_semaforo.release()
-        print(f"Persona {self.id_persona} ha salido del museo.")
+        if not museo_semaforo.acquire(timeout=1):  # Timeout para poder salir en caso de terminación
+            return
+        if not terminar:
+            print(f"Persona {self.id_persona} está visitando el museo.")
+            time.sleep(random.uniform(1, 3))  # Simulación del tiempo en el museo
+            time.sleep(1)  # Pausa de 1 segundo
+            with stats_lock:
+                personas_museo += 1
+            museo_semaforo.release()
 
     def visitar_show(self):
-        show_semaforo.acquire()
         global personas_show
-        print(f"Persona {self.id_persona} está esperando para ver el show de realidad virtual.")
-        acomodador.agregar_persona()
-        acomodador.iniciar_show()
-        with stats_lock:
-            personas_show += 1
-        show_semaforo.release()
-        print(f"Persona {self.id_persona} ha salido del show.")
+        if not show_semaforo.acquire(timeout=1):  # Timeout para poder salir en caso de terminación
+            return
+        if not terminar:
+            print(f"Persona {self.id_persona} está esperando para ver el show de realidad virtual.")
+            time.sleep(1)  # Pausa de 1 segundo
+            acomodador.agregar_persona()
+            acomodador.iniciar_show()
+            with stats_lock:
+                personas_show += 1
+            show_semaforo.release()
 
     def visitar_safari(self):
-        vehiculo_semaforo.acquire()  # Espera a que haya un vehículo disponible
-        print(f"Persona {self.id_persona} está esperando un vehículo para ir al safari.")
-        time.sleep(random.uniform(1, 2))  # Tiempo para llegar al safari
         global personas_safari
-        with stats_lock:
-            personas_safari += 1
-        vehiculo_semaforo.release()
-        print(f"Persona {self.id_persona} ha salido del safari.")
+        if not safari_semaforo.acquire(timeout=1):  # Timeout para poder salir en caso de terminación
+            return
+        if not terminar:
+            print(f"Persona {self.id_persona} está esperando un vehículo para ir al safari.")
+            time.sleep(1)  # Pausa de 1 segundo
+            with stats_lock:
+                personas_safari += 1
+            # Liberar el semáforo del vehículo para que pueda salir
+            vehiculo_semaforo.release()
 
 # Clase Vehiculo
 class Vehiculo(threading.Thread):
@@ -121,24 +135,23 @@ class Vehiculo(threading.Thread):
         self.id_vehiculo = id_vehiculo
 
     def run(self):
-        while True:
-            print(f"Vehículo {self.id_vehiculo} está esperando pasajeros.")
-            vehiculo_semaforo.acquire()
-            print(f"Vehículo {self.id_vehiculo} está transportando personas al safari.")
-            time.sleep(2)  # Simulación del tiempo de viaje
-            with stats_lock:
-                personas_transportadas[self.id_vehiculo] += CAPACIDAD_VEHICULO
-            print(f"Vehículo {self.id_vehiculo} ha transportado personas.")
+        global terminar
+        while not terminar:
+            if not vehiculo_semaforo.acquire(timeout=1):  # Timeout para poder salir en caso de terminación
+                continue
+            if not terminar:
+                print(f"Vehículo {self.id_vehiculo} está transportando personas al safari.")
+                time.sleep(2)  # Simulación del tiempo de viaje
+                with stats_lock:
+                    personas_transportadas[self.id_vehiculo] += CAPACIDAD_VEHICULO
+                safari_semaforo.release()  # Liberar el semáforo del safari
+            time.sleep(1)  # Pausa de 1 segundo para evitar ciclos infinitos
 
 # Función para manejar la señal de terminación
 def signal_handler(sig, frame):
+    global terminar
     print("\nSeñal de terminación recibida. Cerrando el parque...")
-    # Imprimir estadísticas finales
-    print(f"Personas que visitaron el museo: {personas_museo}")
-    print(f"Personas que vieron el show de realidad virtual: {personas_show}")
-    print(f"Personas que visitaron el safari: {personas_safari}")
-    print(f"Personas transportadas por cada vehículo: {personas_transportadas}")
-    sys.exit(0)
+    terminar = True  # Señal para que los hilos terminen
 
 # Asignar el manejador de señales para SIGTERM y SIGINT (Ctrl+C)
 signal.signal(signal.SIGTERM, signal_handler)
@@ -161,8 +174,20 @@ for p in personas:
 for p in personas:
     p.join()
 
-# Imprimir estadísticas finales si todas las personas terminan
-print(f"Personas que visitaron el museo: {personas_museo}")
-print(f"Personas que vieron el show de realidad virtual: {personas_show}")
-print(f"Personas que visitaron el safari: {personas_safari}")
-print(f"Personas transportadas por cada vehículo: {personas_transportadas}")
+# Imprimir estadísticas finales inmediatamente después de recibir la señal de terminación
+def imprimir_estadisticas_finales():
+    with stats_lock:
+        print("\n--- Estadísticas finales ---")
+        print(f"Personas que visitaron el museo: {personas_museo}")
+        print(f"Personas que vieron el show de realidad virtual: {personas_show}")
+        print(f"Personas que visitaron el safari: {personas_safari}")
+
+# Esperar a que todos los vehículos terminen y luego imprimir estadísticas
+for v in vehiculos:
+    v.join()
+
+# Imprimir estadísticas solo al final
+imprimir_estadisticas_finales()
+
+# Salir del programa
+sys.exit(0)
