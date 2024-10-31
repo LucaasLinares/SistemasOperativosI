@@ -1,1 +1,78 @@
+import os
+import socket
+import signal
+import sys
+import threading
+
+class Servidor:
+    def __init__(self, directorio, host='localhost', puerto=12345):
+        self.directorio = directorio
+        self.host = host
+        self.puerto = puerto
+        self.ejecutando = True  # Bandera para controlar si el servidor está ejecutándose
+        self.socket_servidor = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        
+    def iniciar(self):
+        # Inicia el servidor y lo enlaza al puerto especificado
+        self.socket_servidor.bind((self.host, self.puerto))
+        self.socket_servidor.listen(5)
+        print(f"Servidor escuchando en {self.host}:{self.puerto}")
+        
+        # Registra el manejador de señales para SIGTERM
+        signal.signal(signal.SIGTERM, self.terminar)
+        
+        try:
+            # Bucle para aceptar conexiones
+            while self.ejecutando:
+                socket_cliente, addr = self.socket_servidor.accept()
+                print(f"Conexión desde {addr}")
+                threading.Thread(target=self.atender_cliente, args=(socket_cliente,)).start()
+        
+        except KeyboardInterrupt:
+            print("\nServidor interrumpido manualmente. Cerrando...")  
+            self.terminar(None, None)  # Llama al método de cierre limpio en caso de interrupción manual
+
+    def atender_cliente(self, socket_cliente):
+        # Recibe el mensaje del cliente
+        mensaje = socket_cliente.recv(1024).decode().strip()
+        print(f"Mensaje recibido: '{mensaje}'")  # Imprime el mensaje recibido para depuración
+        
+        if mensaje.upper() == "LISTAR":
+            # Listar todos los archivos en el directorio
+            try:
+                archivos = os.listdir(self.directorio)
+                respuesta = "\n".join(archivos) if archivos else "No hay archivos"
+            except Exception as e:
+                respuesta = f"Error: {e}"
+        
+        elif mensaje.startswith("eliminar "):
+            # Procesa el comando ELIMINAR
+            nombre_archivo = mensaje.split(" ", 1)[1].strip()
+            ruta_archivo = os.path.join(self.directorio, nombre_archivo)
+            if os.path.isfile(ruta_archivo):
+                os.remove(ruta_archivo)
+                respuesta = "ELIMINADO"
+            else:
+                respuesta = "NO_ENCONTRADO"
+        
+        else:
+            respuesta = "Comando no reconocido"
+        
+        # Envía la respuesta de vuelta al cliente
+        socket_cliente.sendall(respuesta.encode())
+        socket_cliente.close()
+    
+    def terminar(self, signum, frame):
+        print("Cerrando el servidor...")
+        self.ejecutando = False
+        self.socket_servidor.close()
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Uso: servidor.py <directorio>")
+        sys.exit(1)
+    
+    directorio = sys.argv[1]
+    servidor = Servidor(directorio)
+    servidor.iniciar()
 
