@@ -1,1 +1,22 @@
+import socket
+import sys
+
+def main():
+    if len(sys.argv) < 2:
+        print("Uso: cliente.py <listar | eliminar archivo>")
+        sys.exit(1)
+    
+    host = 'localhost'
+    puerto = 12345
+    mensaje = " ".join(sys.argv[1:])
+    
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as socket_cliente:
+        socket_cliente.connect((host, puerto))
+        socket_cliente.sendall(mensaje.encode())
+        
+        respuesta = socket_cliente.recv(1024).decode()
+        print("Respuesta del servidor:", respuesta)
+
+if __name__ == "__main__":
+    main()
 
