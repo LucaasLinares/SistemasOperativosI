@@ -1,0 +1,94 @@
+import pickle
+import bisect
+
+# Datos de ejemplo: tabla de asignaturas
+asignaturas = [
+    ("B6001", "Introducción a Ingeniería en Computación"),
+    ("T0002", "Introducción a la Lectura y Escritura Académica"),
+    ("B6000", "Matemática I"),
+    ("B6004", "Electrónica Digital"),
+    ("B6002", "Física General I"),
+    ("B6003", "Programación I"),
+    ("B6005", "Química"),
+    ("B6009", "Arquitectura de Computadoras I"),
+    ("B6011", "Física General II"),
+    ("B6006", "Matemática II"),
+    ("B6008", "Programación II"),
+    ("B6007", "Álgebra y Geometría"),
+    ("B6012", "Análisis de Circuitos"),
+    ("B5638", "Inglés Técnico"),
+    ("B6010", "Matemática III"),
+    ("B6013", "Bases de Datos"),
+    ("B6014", "Introducción a los Sistemas Distribuidos y Paralelos"),
+    ("B6016", "Laboratorio de Sistemas Embebidos"),
+    ("B6017", "Seguridad Ambiental y Laboral"),
+    ("B6015", "Programación III"),
+    ("B6020", "Redes de Área Local y Extendida"),
+    ("B6019", "Señales y Sistemas"),
+    ("B6018", "Sistemas Operativos I"),
+    ("B6024", "Arquitectura de Computadora II"),
+    ("B6023", "Electrónica Analógica"),
+    ("B6021", "Ingeniería de Software I"),
+    ("B6022", "Probabilidad, Estadística y Procesos Aleatorios"),
+    ("B6027", "Compiladores e Intérpretes"),
+    ("B6025", "Inteligencia Artificial"),
+    ("B6026", "Optativa I"),
+    ("B6028", "Sistemas Operativos II"),
+    ("B5672", "Comunicaciones Analógicas y Digitales"),
+    ("B5617", "Economía y Organización Industrial"),
+    ("B6029", "Optativa II"),
+    ("B6030", "Programa de Trabajo Social"),
+    ("B6023", "Optativa III"),
+    ("B6033", "Práctica Profesional Supervisada"),
+    ("B6032", "Seguridad Informática")
+]
+
+def crear_archivo_datos():
+    """Crea el archivo de datos con la lista de asignaturas"""
+    with open("datos_asignaturas.txt", "w") as f:
+        for codigo, nombre in asignaturas:
+            f.write(f"{codigo},{nombre}\n")
+
+def crear_archivo_indice():
+    """Crea el archivo de índice para realizar la búsqueda rápida por nombre de asignatura"""
+    indice = []
+    with open("datos_asignaturas.txt", "r") as f:
+        pos = 0
+        for linea in f:
+            _, nombre = linea.strip().split(",", 1)
+            indice.append((nombre, pos))
+            pos = f.tell()
+    
+    # Guardar el índice en un archivo binario ordenado por nombre de asignatura
+    with open("indice_asignaturas.bin", "wb") as f:
+        pickle.dump(sorted(indice), f)
+
+def buscar_asignatura(nombre_asignatura):
+    """Busca una asignatura por nombre en el archivo de índice y recupera su registro"""
+    # Leer el índice desde el archivo binario
+    with open("indice_asignaturas.bin", "rb") as f:
+        indice = pickle.load(f)
+
+    # Realizar búsqueda binaria en el índice
+    nombres = [item[0] for item in indice]
+    pos = bisect.bisect_left(nombres, nombre_asignatura)
+    
+    if pos < len(indice) and indice[pos][0] == nombre_asignatura:
+        # Si se encuentra, obtener la posición en el archivo de datos
+        direccion = indice[pos][1]
+        
+        # Leer y mostrar el registro correspondiente en el archivo de datos
+        with open("datos_asignaturas.txt", "r") as f:
+            f.seek(direccion)
+            registro = f.readline().strip()
+            print(f"Asignatura encontrada: {registro}")
+    else:
+        print("Asignatura no encontrada")
+
+# Crear los archivos de datos e índice si no existen
+crear_archivo_datos()
+crear_archivo_indice()
+
+# Permitir al usuario buscar una asignatura por nombre
+nombre_a_buscar = input("Ingrese el nombre de la asignatura a buscar: ")
+buscar_asignatura(nombre_a_buscar)
