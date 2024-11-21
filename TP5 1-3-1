@@ -53,31 +53,28 @@ def crear_archivo_indice():
     """Crea el archivo de índice para realizar la búsqueda rápida por nombre de asignatura"""
     indice = []
     with open("datos_asignaturas.txt", "r") as f:
-        pos = 0
-        for linea in f:
-            _, nombre = linea.strip().split(",", 1)
-            indice.append((nombre, pos))
+        while True:
             pos = f.tell()
+            linea = f.readline()
+            if not linea:
+                break
+            _, nombre = linea.strip().split(",", 1)
+            indice.append((nombre.strip().lower(), pos))
     
-    # Guardar el índice en un archivo binario ordenado por nombre de asignatura
     with open("indice_asignaturas.bin", "wb") as f:
         pickle.dump(sorted(indice), f)
 
 def buscar_asignatura(nombre_asignatura):
     """Busca una asignatura por nombre en el archivo de índice y recupera su registro"""
-    # Leer el índice desde el archivo binario
     with open("indice_asignaturas.bin", "rb") as f:
         indice = pickle.load(f)
 
-    # Realizar búsqueda binaria en el índice
     nombres = [item[0] for item in indice]
-    pos = bisect.bisect_left(nombres, nombre_asignatura)
+    nombre_a_buscar = nombre_asignatura.strip().lower()
+    pos = bisect.bisect_left(nombres, nombre_a_buscar)
     
-    if pos < len(indice) and indice[pos][0] == nombre_asignatura:
-        # Si se encuentra, obtener la posición en el archivo de datos
+    if pos < len(indice) and indice[pos][0] == nombre_a_buscar:
         direccion = indice[pos][1]
-        
-        # Leer y mostrar el registro correspondiente en el archivo de datos
         with open("datos_asignaturas.txt", "r") as f:
             f.seek(direccion)
             registro = f.readline().strip()
@@ -90,5 +87,5 @@ crear_archivo_datos()
 crear_archivo_indice()
 
 # Permitir al usuario buscar una asignatura por nombre
-nombre_a_buscar = input("Ingrese el nombre de la asignatura a buscar: ")
+nombre_a_buscar = input("Ingrese el nombre de la asignatura a buscar: ").strip()
 buscar_asignatura(nombre_a_buscar)
